@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NASA 소행성 접근 정보 조회</title>
+  <title>NASA 소행성 접근 정보 및 이미지 조회</title>
   <style>
     * {
       box-sizing: border-box;
@@ -24,7 +24,7 @@
 
     .container {
       width: 100%;
-      max-width: 800px;
+      max-width: 900px;
       background: #111625;
       border-radius: 12px;
       padding: 30px;
@@ -88,18 +88,18 @@
 
     .asteroid-list {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
     }
 
     .card {
       background: #1e293b;
-      border-radius: 8px;
-      padding: 20px;
+      border-radius: 10px;
+      overflow: hidden;
       border-left: 4px solid #3b82f6;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
 
     .card.hazardous {
@@ -107,8 +107,33 @@
       background: #2a1b24;
     }
 
+    .card-img-wrapper {
+      width: 100%;
+      height: 160px;
+      background-color: #0f172a;
+      overflow: hidden;
+    }
+
+    .card-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.3s ease;
+    }
+
+    .card:hover .card-img {
+      transform: scale(1.05);
+    }
+
+    .card-content {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
     .card h3 {
-      font-size: 1.2rem;
+      font-size: 1.1rem;
       color: #f8fafc;
       word-break: break-all;
     }
@@ -133,7 +158,7 @@
     }
 
     .info-item {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       color: #cbd5e1;
     }
 
@@ -145,7 +170,7 @@
 <body>
 
   <div class="container">
-    <h1>🚀 NASA 근지구 소행성(NEO) 정보</h1>
+    <h1>🚀 NASA 근지구 소행성(NEO) 정보 및 이미지</h1>
     
     <div class="search-box">
       <label for="date-input">날짜 선택:</label>
@@ -159,12 +184,32 @@
 
   <script>
     const API_KEY = '8BmfdcpVXLRND6L3urBWVP0NjOysegFvCZS4HWT7';
-    
-    // 페이지 로드 시 오늘 날짜 기본 설정
+    let spaceImages = [];
+
     document.addEventListener('DOMContentLoaded', () => {
       const today = new Date().toISOString().split('T')[0];
       document.getElementById('date-input').value = today;
     });
+
+    // NASA Image Library API에서 우주/소행성 이미지들을 가져오는 함수
+    async function getSpaceImages() {
+      if (spaceImages.length > 0) return spaceImages;
+      
+      try {
+        const res = await fetch('https://images-api.nasa.gov/search?q=asteroid&media_type=image');
+        const data = await res.json();
+        const items = data.collection.items;
+        
+        spaceImages = items
+          .map(item => item.links && item.links[0] ? item.links[0].href : null)
+          .filter(url => url !== null);
+          
+        return spaceImages;
+      } catch (err) {
+        console.error('이미지 불러오기 실패:', err);
+        return [];
+      }
+    }
 
     async function fetchAsteroids() {
       const dateInput = document.getElementById('date-input').value;
@@ -176,18 +221,23 @@
         return;
       }
 
-      statusDiv.textContent = '데이터를 불러오는 중입니다...';
+      statusDiv.textContent = '데이터 및 이미지를 불러오는 중입니다...';
       listDiv.innerHTML = '';
 
-      const url = `https://api.nasa.gov/neo/rest/v1/feed?start_date=${dateInput}&end_date=${dateInput}&api_key=${API_KEY}`;
+      const asteroidUrl = `https://api.nasa.gov/neo/rest/v1/feed?start_date=${dateInput}&end_date=${dateInput}&api_key=${API_KEY}`;
 
       try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`오류가 발생했습니다: ${response.status}`);
+        // 소행성 데이터와 우주 이미지를 동시에 호출
+        const [asteroidRes, images] = await Promise.all([
+          fetch(asteroidUrl),
+          getSpaceImages()
+        ]);
+
+        if (!asteroidRes.ok) {
+          throw new Error(`오류가 발생했습니다: ${asteroidRes.status}`);
         }
 
-        const data = await response.json();
+        const data = await asteroidRes.json();
         const asteroids = data.near_earth_objects[dateInput];
 
         if (!asteroids || asteroids.length === 0) {
@@ -197,7 +247,7 @@
 
         statusDiv.textContent = `총 ${asteroids.length}개의 소행성이 발견되었습니다.`;
 
-        asteroids.forEach(asteroid => {
+        asteroids.forEach((asteroid, index) => {
           const isHazardous = asteroid.is_potentially_hazardous_asteroid;
           const minDiam = asteroid.estimated_diameter.meters.estimated_diameter_min.toFixed(1);
           const maxDiam = asteroid.estimated_diameter.meters.estimated_diameter_max.toFixed(1);
@@ -206,19 +256,29 @@
           const speed = parseFloat(closeApproachData.relative_velocity.kilometers_per_hour).toLocaleString('ko-KR', { maximumFractionDigits: 0 });
           const missDistance = parseFloat(closeApproachData.miss_distance.kilometers).toLocaleString('ko-KR', { maximumFractionDigits: 0 });
 
+          // 이미지 목록에서 순서대로 매칭 (이미지가 부족하면 기본 이미지)
+          const imageUrl = images.length > 0 
+            ? images[index % images.length] 
+            : 'https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?w=500';
+
           const card = document.createElement('div');
           card.className = `card ${isHazardous ? 'hazardous' : ''}`;
           
           card.innerHTML = `
-            <h3>${asteroid.name}</h3>
-            <div>
-              <span class="badge ${isHazardous ? 'badge-danger' : 'badge-safe'}">
-                ${isHazardous ? '⚠️ 위협 가능성 있음' : '✅ 안전함'}
-              </span>
+            <div class="card-img-wrapper">
+              <img class="card-img" src="${imageUrl}" alt="${asteroid.name}" loading="lazy">
             </div>
-            <div class="info-item"><strong>추정 지름:</strong> ${minDiam}m ~ ${maxDiam}m</div>
-            <div class="info-item"><strong>상대 속도:</strong> 시속 ${speed} km</div>
-            <div class="info-item"><strong>지구 최단 거리:</strong> ${missDistance} km</div>
+            <div class="card-content">
+              <h3>${asteroid.name}</h3>
+              <div>
+                <span class="badge ${isHazardous ? 'badge-danger' : 'badge-safe'}">
+                  ${isHazardous ? '⚠️ 위협 가능성 있음' : '✅ 안전함'}
+                </span>
+              </div>
+              <div class="info-item"><strong>추정 지름:</strong> ${minDiam}m ~ ${maxDiam}m</div>
+              <div class="info-item"><strong>상대 속도:</strong> 시속 ${speed} km</div>
+              <div class="info-item"><strong>지구 최단 거리:</strong> ${missDistance} km</div>
+            </div>
           `;
 
           listDiv.appendChild(card);
